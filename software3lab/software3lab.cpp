@@ -9,6 +9,7 @@
 #include <string>
 #include <iostream>  
 #include <clocale>
+#include <cmath>
 
 using namespace std;
 
@@ -21,7 +22,15 @@ struct Vec2 {
 struct Vec3 {
 	float x, y, z;//точка или направление в 3D
 };
+float dot(Vec3 a, Vec3 b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
 
+//делает длину вектора равной 1, направление не меняется
+Vec3 normalize(Vec3 v) {
+	float len = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+	return { v.x / len, v.y / len, v.z / len };
+}
 struct Face {
 	int v[3];//номера трёх вершин
 	int vt[3];//номера текстурных координат
@@ -31,6 +40,7 @@ struct Face {
 struct Model {
 	vector<Vec3> verts;//все вершины из строк "v"
 	vector<Face> faces;//все треугольники из строк "f"
+	vector<Vec3> norms;//все нормали из строк "vn"
 };
 
 float edge(Vec3 a, Vec3 b, Vec3 p) {
@@ -52,6 +62,11 @@ bool loadObj(const string& path, Model& model)
 			s >> v.x >> v.y >> v.z;
 			model.verts.push_back(v);//добавить в конец массива
 		}
+		else if (type == "vn") {
+			Vec3 n;
+			s >> n.x >> n.y >> n.z;
+			model.norms.push_back(n);
+		}
 		else if (type == "f") {
 			Face f;
 			char slash;//будем "выбрасывать" символы '/'
@@ -65,7 +80,7 @@ bool loadObj(const string& path, Model& model)
 	return true;
 }
 void drawTriangle(vector<Color>& pixels, vector<float>& zbuffer, int width, int height,
-	Vec3 A, Vec3 B, Vec3 C, Color cA, Color cB, Color cC){
+	Vec3 A, Vec3 B, Vec3 C, Vec3 nA, Vec3 nB, Vec3 nC, Vec3 lightDir) {
 	int minX = max(0, (int)min({ A.x, B.x, C.x }));
 	int maxX = min(width - 1, (int)max({ A.x, B.x, C.x }));
 	int minY = max(0, (int)min({ A.y, B.y, C.y }));
@@ -88,10 +103,17 @@ void drawTriangle(vector<Color>& pixels, vector<float>& zbuffer, int width, int 
 				if (z <= zbuffer[idx]) continue;//тут уже нарисовано что-то ближе, пропускаем
 				zbuffer[idx] = z;//запоминаем новую глубину
 
-				Color c;
-				c.r = (unsigned char)(alpha * cA.r + beta * cB.r + gamma * cC.r);
-				c.g = (unsigned char)(alpha * cA.g + beta * cB.g + gamma * cC.g);
-				c.b = (unsigned char)(alpha * cA.b + beta * cB.b + gamma * cC.b);
+				//нормаль в этом пикселе смешиваем из нормалей вершин
+				Vec3 n = {
+				 alpha * nA.x + beta * nB.x + gamma * nC.x,
+				 alpha * nA.y + beta * nB.y + gamma * nC.y,
+				 alpha * nA.z + beta * nB.z + gamma * nC.z
+				};
+				n = normalize(n);//после смешивания длина уже не 1, исправляем
+
+				float diffuse = max(0.0f, dot(n, lightDir));//насколько пиксель повёрнут к свету
+				unsigned char v = (unsigned char)(255 * diffuse);
+				Color c = { v, v, v };//серый: от чёрного до белого
 				pixels[y * width + x] = c;
 				
 			}
@@ -116,7 +138,7 @@ int main()
 	const int height = 800;
 	vector<Color> pixels(width * height);
 	vector<float> zbuffer(width * height, -1e9f);//изначально везде "бесконечно далеко"
-	
+	Vec3 lightDir = normalize({ 1, 1, 1 });//свет спереди, сверху и справа
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
 			pixels[y * width + x] = { 30, 60, 150 };
@@ -127,8 +149,8 @@ int main()
 		Vec3 B = toScreen(model.verts[f.v[1]], width, height);
 		Vec3 C = toScreen(model.verts[f.v[2]], width, height);
 
-		Color c = { (unsigned char)(rand() % 256), (unsigned char)(rand() % 256), (unsigned char)(rand() % 256) };
-		drawTriangle(pixels, zbuffer, width, height, A, B, C, c, c, c);
+		drawTriangle(pixels, zbuffer, width, height, A, B, C,
+			model.norms[f.vn[0]], model.norms[f.vn[1]], model.norms[f.vn[2]], lightDir);
 	}
 	stbi_flip_vertically_on_write(1);
 	stbi_write_png("output.png", width, height, 3, pixels.data(), width * 3);
