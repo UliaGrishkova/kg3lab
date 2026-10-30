@@ -22,6 +22,7 @@ struct Vec2 {
 struct Vec3 {
 	float x, y, z;//точка или направление в 3D
 };
+//скалярное произведение: насколько две стрелки смотрят в одну сторону
 float dot(Vec3 a, Vec3 b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -31,6 +32,27 @@ Vec3 normalize(Vec3 v) {
 	float len = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 	return { v.x / len, v.y / len, v.z / len };
 }
+//разность точек: стрелка из b в a
+Vec3 sub(Vec3 a, Vec3 b) {
+	return { a.x - b.x, a.y - b.y, a.z - b.z };
+}
+
+//векторное произведение: стрелка, перпендикулярная a и b
+Vec3 cross(Vec3 a, Vec3 b) {
+	return {
+		a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x
+	};
+}
+
+struct Vec4 {
+	float x, y, z, w;//точка в 3D + четвёртое число для матриц
+};
+
+struct Mat4 {
+	float m[4][4];//m[строка][столбец]
+};
 struct Face {
 	int v[3];//номера трёх вершин
 	int vt[3];//номера текстурных координат
@@ -42,7 +64,72 @@ struct Model {
 	vector<Face> faces;//все треугольники из строк "f"
 	vector<Vec3> norms;//все нормали из строк "vn"
 };
+Mat4 identityMatrix() {
+	Mat4 r = {};//все элементы 0
+	for (int i = 0; i < 4; i++) r.m[i][i] = 1;//единицы на диагонали
+	return r;
+}
 
+Vec4 mul(Mat4 a, Vec4 v) {
+	return {
+		a.m[0][0] * v.x + a.m[0][1] * v.y + a.m[0][2] * v.z + a.m[0][3] * v.w,
+		a.m[1][0] * v.x + a.m[1][1] * v.y + a.m[1][2] * v.z + a.m[1][3] * v.w,
+		a.m[2][0] * v.x + a.m[2][1] * v.y + a.m[2][2] * v.z + a.m[2][3] * v.w,
+		a.m[3][0] * v.x + a.m[3][1] * v.y + a.m[3][2] * v.z + a.m[3][3] * v.w
+	};
+}
+//склеивает два преобразования в одно: сначала b, потом a
+Mat4 mul(Mat4 a, Mat4 b) {
+	Mat4 r = {};
+	for (int i = 0; i < 4; i++)
+		for (int j = 0; j < 4; j++)
+			for (int k = 0; k < 4; k++)
+				r.m[i][j] += a.m[i][k] * b.m[k][j];
+	return r;
+}
+//матрица вида: переводит мир в систему координат камеры
+Mat4 lookAt(Vec3 eye, Vec3 target, Vec3 up) {
+	Vec3 z = normalize(sub(eye, target));//назад: от цели к камере
+	Vec3 x = normalize(cross(up, z));//вправо
+	Vec3 y = cross(z, x);//вверх для камеры
+
+	Mat4 r = identityMatrix();
+	r.m[0][0] = x.x; r.m[0][1] = x.y; r.m[0][2] = x.z; r.m[0][3] = -dot(x, eye);
+	r.m[1][0] = y.x; r.m[1][1] = y.y; r.m[1][2] = y.z; r.m[1][3] = -dot(y, eye);
+	r.m[2][0] = z.x; r.m[2][1] = z.y; r.m[2][2] = z.z; r.m[2][3] = -dot(z, eye);
+	return r;
+}
+//матрица перспективы: дальнее становится меньше
+//fov — угол обзора в градусах, aspect — ширина/высота экрана
+Mat4 perspective(float fov, float aspect, float nearPlane, float farPlane) {
+	float f = 1.0f / tan(fov * 3.14159265f / 180 / 2);//градусы в радианы, половина угла
+	Mat4 r = {};
+	r.m[0][0] = f / aspect;
+	r.m[1][1] = f;
+	r.m[2][2] = (farPlane + nearPlane) / (nearPlane - farPlane);
+	r.m[2][3] = 2 * farPlane * nearPlane / (nearPlane - farPlane);
+	r.m[3][2] = -1;//вот тут в w кладётся расстояние до камеры
+	return r;
+}
+//камера: где стоит, куда смотрит и где у неё верх
+struct Camera {
+	Vec3 position;
+	Vec3 target;
+	Vec3 up;
+	float fov = 60;//угол обзора в градусах
+	float aspect = 1;//ширина/высота картинки
+	float nearPlane = 0.1f;//ближе этого не рисуем
+	float farPlane = 100;//дальше этого не рисуем
+
+	//матрица вида для этой камеры
+	Mat4 view() const {
+		return lookAt(position, target, up);
+	}
+	//матрица перспективы для этой камеры
+	Mat4 projection() const {
+		return perspective(fov, aspect, nearPlane, farPlane);
+	}
+};
 float edge(Vec3 a, Vec3 b, Vec3 p) {
 	return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);//с какой стороны отрезка находится точка p относительно отрезка ab
 }
@@ -120,9 +207,15 @@ void drawTriangle(vector<Color>& pixels, vector<float>& zbuffer, int width, int 
 		}
 	}
 }
-//переводит точку модели (от -1 до 1) в пиксели экрана, z оставляем для глубины
-Vec3 toScreen(Vec3 v, int width, int height) {
-	return { (v.x + 1) * width / 2, (v.y + 1) * height / 2, v.z };
+//точку модели через матрицы камеры переводит в пиксели экрана
+Vec3 toScreen(Vec3 v, Mat4 mvp, int width, int height) {
+	Vec4 clip = mul(mvp, Vec4{ v.x, v.y, v.z, 1 });//применяем все матрицы сразу
+	Vec3 ndc = { clip.x / clip.w, clip.y / clip.w, clip.z / clip.w };//перспективное деление
+	return {
+		(ndc.x + 1) * width / 2,
+		(ndc.y + 1) * height / 2,
+		-ndc.z//минус: у нас в z-буфере больше значит ближе, а тут наоборот
+	};
 }
 int main()
 {
@@ -139,18 +232,21 @@ int main()
 	vector<Color> pixels(width * height);
 	vector<float> zbuffer(width * height, -1e9f);//изначально везде "бесконечно далеко"
 	Vec3 lightDir = normalize({ 1, 1, 1 });//свет спереди, сверху и справа
+	Camera cam = { { 0, 0, 3 }, { 0, 0, 0 }, { 0, 1, 0 } };//стоит на 3 спереди, смотрит в центр
+	Mat4 mvp = mul(cam.projection(), cam.view());//сначала вид, потом перспектива
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
 			pixels[y * width + x] = { 30, 60, 150 };
 		}
 	}
 	for (const Face& f : model.faces) {
-		Vec3 A = toScreen(model.verts[f.v[0]], width, height);
-		Vec3 B = toScreen(model.verts[f.v[1]], width, height);
-		Vec3 C = toScreen(model.verts[f.v[2]], width, height);
+		Vec3 A = toScreen(model.verts[f.v[0]], mvp, width, height);
+		Vec3 B = toScreen(model.verts[f.v[1]], mvp, width, height);
+		Vec3 C = toScreen(model.verts[f.v[2]], mvp, width, height);
 
 		drawTriangle(pixels, zbuffer, width, height, A, B, C,
 			model.norms[f.vn[0]], model.norms[f.vn[1]], model.norms[f.vn[2]], lightDir);
+
 	}
 	stbi_flip_vertically_on_write(1);
 	stbi_write_png("output.png", width, height, 3, pixels.data(), width * 3);
