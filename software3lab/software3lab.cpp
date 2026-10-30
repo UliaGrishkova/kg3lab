@@ -21,10 +21,12 @@ float edge(Vec2 a, Vec2 b, Vec2 p) {
 void drawTriangle(vector<Color>& pixels, int width, int height,
 	Vec2 A, Vec2 B, Vec2 C, Color color)
 {
-	int minX = (int)min({ A.x, B.x, C.x });
-	int maxX = (int)max({ A.x, B.x, C.x });
-	int minY = (int)min({ A.y, B.y, C.y });
-	int maxY = (int)max({ A.y, B.y, C.y });
+	int minX = max(0, (int)min({ A.x, B.x, C.x }));
+	int maxX = min(width - 1, (int)max({ A.x, B.x, C.x }));
+	int minY = max(0, (int)min({ A.y, B.y, C.y }));
+	int maxY = min(height - 1, (int)max({ A.y, B.y, C.y }));
+	float area = edge(A, B, C);
+	if (area == 0) return;   //треугольник сплющен в линию
 	for (int y = minY; y <= maxY; y++) {
 		for (int x = minX; x <= maxX; x++) {
 			Vec2 p = { x + 0.5f, y + 0.5f };   // центр пикселя
@@ -32,6 +34,9 @@ void drawTriangle(vector<Color>& pixels, int width, int height,
 			float w0 = edge(B, C, p);
 			float w1 = edge(C, A, p);
 			float w2 = edge(A, B, p);
+			float alpha = w0 / area;
+			float beta = w1 / area;
+			float gamma = w2 / area;
 
 			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
 				pixels[y * width + x] = color;
