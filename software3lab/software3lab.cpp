@@ -19,7 +19,7 @@ float edge(Vec2 a, Vec2 b, Vec2 p) {
 	return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);//с какой стороны отрезка находится точка p относительно отрезка ab
 }
 void drawTriangle(vector<Color>& pixels, int width, int height,
-	Vec2 A, Vec2 B, Vec2 C, Color color)
+	Vec2 A, Vec2 B, Vec2 C, Color cA, Color cB, Color cC)
 {
 	int minX = max(0, (int)min({ A.x, B.x, C.x }));
 	int maxX = min(width - 1, (int)max({ A.x, B.x, C.x }));
@@ -38,8 +38,12 @@ void drawTriangle(vector<Color>& pixels, int width, int height,
 			float beta = w1 / area;
 			float gamma = w2 / area;
 
-			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				pixels[y * width + x] = color;
+			if (alpha >= 0 && beta >= 0 && gamma >= 0) {
+				Color c;
+				c.r = (unsigned char)(alpha * cA.r + beta * cB.r + gamma * cC.r);
+				c.g = (unsigned char)(alpha * cA.g + beta * cB.g + gamma * cC.g);
+				c.b = (unsigned char)(alpha * cA.b + beta * cB.b + gamma * cC.b);
+				pixels[y * width + x] = c;
 			}
 		}
 	}
@@ -49,6 +53,7 @@ int main()
 	const int width = 800;
 	const int height = 800;
 	vector<Color> pixels(width * height);
+	
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
 			pixels[y * width + x] = { 30, 60, 150 };
@@ -57,7 +62,7 @@ int main()
 	pixels[10 * width + 10] = { 255, 255, 255 };
 	drawTriangle(pixels, width, height,
 		{ 100, 100 }, { 700, 150 }, { 400, 700 },
-		{ 255, 200, 0 });
+		{ 255, 0, 0 }, { 0, 255, 0 }, { 0, 0, 255 });
 	stbi_flip_vertically_on_write(1);
 	stbi_write_png("output.png", width, height, 3, pixels.data(), width * 3);
 }
