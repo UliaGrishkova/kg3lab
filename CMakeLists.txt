@@ -13,3 +13,4 @@ project ("software3lab")
 
 # Включите подпроекты.
 add_subdirectory ("software3lab")
+   target_compile_definitions(software3lab PRIVATE MODELS_DIR="${CMAKE_SOURCE_DIR}/models/")
