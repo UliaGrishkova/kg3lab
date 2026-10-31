@@ -166,8 +166,27 @@ bool loadObj(const string& path, Model& model)
 	}
 	return true;
 }
+//пиксельный шейдер: считает цвет точки по модели освещения Фонга
+//n нормаль, pos где точка в мире, lightDir направление на свет, camPos где камера
+Color phongShader(Vec3 n, Vec3 pos, Vec3 lightDir, Vec3 camPos) {
+	float ambient = 0.1f;//фоновый свет, чтобы тени не были чёрными
+
+	float nl = dot(n, lightDir);
+	float diffuse = max(0.0f, nl);//насколько точка повёрнута к свету
+
+	Vec3 r = { 2 * nl * n.x - lightDir.x, 2 * nl * n.y - lightDir.y, 2 * nl * n.z - lightDir.z };//отражённый луч света
+	Vec3 viewDir = normalize(sub(camPos, pos));//из точки на камеру
+	float specular = pow(max(0.0f, dot(r, viewDir)), 32);//блик: чем больше степень, тем он меньше и резче
+	if (nl <= 0) specular = 0;//на теневой стороне блика не бывает
+
+	float light = ambient + 0.8f * diffuse + 0.4f * specular;//складываем всё вместе
+	light = min(1.0f, light);//больше 1 нельзя, иначе цвет "перепрыгнет" через 255
+	unsigned char v = (unsigned char)(255 * light);
+	return { v, v, v };
+}
 void drawTriangle(vector<Color>& pixels, vector<float>& zbuffer, int width, int height,
-	Vec3 A, Vec3 B, Vec3 C, Vec3 nA, Vec3 nB, Vec3 nC, Vec3 lightDir) {
+	Vec3 A, Vec3 B, Vec3 C, Vec3 nA, Vec3 nB, Vec3 nC,
+	Vec3 wA, Vec3 wB, Vec3 wC, Vec3 lightDir, Vec3 camPos) {
 	int minX = max(0, (int)min({ A.x, B.x, C.x }));
 	int maxX = min(width - 1, (int)max({ A.x, B.x, C.x }));
 	int minY = max(0, (int)min({ A.y, B.y, C.y }));
@@ -198,10 +217,13 @@ void drawTriangle(vector<Color>& pixels, vector<float>& zbuffer, int width, int 
 				};
 				n = normalize(n);//после смешивания длина уже не 1, исправляем
 
-				float diffuse = max(0.0f, dot(n, lightDir));//насколько пиксель повёрнут к свету
-				unsigned char v = (unsigned char)(255 * diffuse);
-				Color c = { v, v, v };//серый: от чёрного до белого
-				pixels[y * width + x] = c;
+				//где эта точка находится в мире, смешиваем из вершин
+				Vec3 pos = {
+				 alpha * wA.x + beta * wB.x + gamma * wC.x,
+				 alpha * wA.y + beta * wB.y + gamma * wC.y,
+				 alpha * wA.z + beta * wB.z + gamma * wC.z
+				};
+				pixels[idx] = phongShader(n, pos, lightDir, camPos);
 				
 			}
 		}
@@ -245,7 +267,9 @@ int main()
 		Vec3 C = toScreen(model.verts[f.v[2]], mvp, width, height);
 
 		drawTriangle(pixels, zbuffer, width, height, A, B, C,
-			model.norms[f.vn[0]], model.norms[f.vn[1]], model.norms[f.vn[2]], lightDir);
+			model.norms[f.vn[0]], model.norms[f.vn[1]], model.norms[f.vn[2]],
+			model.verts[f.v[0]], model.verts[f.v[1]], model.verts[f.v[2]],
+			lightDir, cam.position);
 
 	}
 	stbi_flip_vertically_on_write(1);
